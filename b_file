@@ -1,0 +1,1 @@
+break prohibitscreenshot.cc:xcb_get_image_unchecked
