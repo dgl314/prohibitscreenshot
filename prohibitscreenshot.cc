@@ -299,32 +299,6 @@ xcb_create_pixmap_checked (xcb_connection_t *c,
     return real_xcb_create_pixmap_checked(c, depth, pid, drawable, width, height);
 }
 
-#if 0
-static bool isProhibitWindowByConfigure(xcb_window_t window) {
-    bool bProhibitWindow = false;
-
-    std::unordered_map< xcb_atom_t, std::vector<std::string> >::iterator it = traceInfo->mapEtcConfAtom2Value->begin();
-    for (; it != traceInfo->mapEtcConfAtom2Value->end(); it++) {
-        xcb_atom_t atomProp = it->first;
-        const std::vector<std::string>& confAtomValues = it->second;
-        std::unordered_set<std::string> windowAtomValues = windowProperty(window, atomProp, XCB_ATOM_ANY);
-        std::unordered_set<std::string>::const_iterator atomValueIt = windowAtomValues.begin();
-        for (; atomValueIt != windowAtomValues.end(); atomValueIt++) {
-            if (std::find(confAtomValues.begin(), confAtomValues.end(), *atomValueIt) != confAtomValues.end()) {
-                bProhibitWindow = true;
-                break;
-            }
-        }
-        if (bProhibitWindow) {
-            fprintf(stdout, "---------isProhibitWindow is true");
-            break;
-        }
-    }
-
-    return bProhibitWindow;
-}
-#endif
-
 inline __attribute__((always_inline))
 static bool isBrowser(xcb_window_t window)
 {
@@ -336,24 +310,6 @@ static bool isBrowser(xcb_window_t window)
         fprintf(stderr, "Failed to xcb_list_properties_reply");
         return bBrowser;
     }
-#if 0
-    int atomLength = xcb_list_properties_atoms_length(propertyReply);
-    xcb_atom_t* atoms = xcb_list_properties_atoms(propertyReply);
-
-    for (int i = 0; i < atomLength; i++) {
-        xcb_atom_t atom = atoms[i];
-        std::string name = atomName(atom);
-        if (name == browserAtomName) {
-            std::unordered_set<std::string> setAtomValues = windowProperty(window, atom, XCB_ATOM_STRING);
-            for (std::unordered_set<std::string>::iterator it = setAtomValues.begin(); it != setAtomValues.end(); it++) {
-                if (*it == browserAtomValue) {
-                    free(propertyReply);
-                    return (bBrowser = true);
-                }
-            }
-        }
-    }
-#else
     xcb_atom_t browserAtom = internAtom(browserAtomName.c_str(), true);
     if (isWindowViewable(window) && iswindowHasProperty(window, browserAtom)) {
         std::unordered_set<std::string> setAtomValues = windowProperty(window, browserAtom, XCB_ATOM_STRING);
@@ -364,7 +320,6 @@ static bool isBrowser(xcb_window_t window)
             }
         }
     }
-#endif
 
     free(propertyReply);
 
@@ -413,24 +368,6 @@ static bool needProhibitScreenshot(xcb_drawable_t window)
 
     for (std::vector<xcb_window_t>::iterator it = vecBrowserWindow.begin(); it != vecBrowserWindow.end(); it++) {
         xcb_window_t browserWindow = *it;
-#if 0
-        xcb_get_window_attributes_cookie_t cookie = xcb_get_window_attributes_unchecked(dpy, browserWindow);
-        xcb_get_window_attributes_reply_t* attReply = xcb_get_window_attributes_reply(dpy, cookie, NULL);
-        if (!attReply) {
-            continue;
-        }
-        if (attReply->map_state == XCB_MAP_STATE_VIEWABLE) {
-            std::unordered_set<std::string> vecAtomValues = windowProperty(browserWindow, internAtom("WM_STATE", true), 0x14c);
-            for (std::unordered_set<std::string>::iterator it = vecAtomValues.begin(); it != vecAtomValues.end(); it++) {
-                const char* data = (*it).c_str();
-                long value = *(const unsigned short*)data;
-                if (value == NormalState) {
-                    free(attReply);
-                    return (isProhibitScreenshot = true);
-                }
-            }
-        }
-#else
         std::unordered_set<std::string> vecAtomValues = windowProperty(browserWindow, internAtom("WM_STATE", true), 0x14c);
         for (std::unordered_set<std::string>::iterator it = vecAtomValues.begin(); it != vecAtomValues.end(); it++) {
             const char* data = (*it).c_str();
@@ -439,7 +376,6 @@ static bool needProhibitScreenshot(xcb_drawable_t window)
                 return (isProhibitScreenshot = true);
             }
         }
-#endif
     }
 
     return isProhibitScreenshot;
@@ -538,12 +474,6 @@ xcb_free_pixmap_checked (xcb_connection_t *c,
 
     return real_xcb_free_pixmap_checked(c, pixmap);
 }
-
-//Pixmap XCompositeNameWindowPixmap (Display *dpy, Window window)
-//{
-//    Pixmap pixmap;
-//    return pixmap;
-//}
 
 __attribute__((constructor)) static void init()
 {
