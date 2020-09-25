@@ -39,11 +39,14 @@ struct TraceInfo
 };
 
 static TraceInfo* traceInfo = NULL;
-static const char* etcWhitelistPath = "/etc/screenshot_whitelist.conf";
 
 static xcb_connection_t *dpy = NULL;
 static xcb_screen_t *screen = NULL;
 static xcb_generic_error_t *err = NULL;
+
+static std::string etcWhitelistPath  = "/etc/screenshot_whitelist.conf";
+static std::string browserAtomName   = "WM_WINDOW_ROLE";
+static std::string browserAtomValue = "browser";
 
 extern "C" {
 #define HOOK(fn)  \
@@ -92,6 +95,22 @@ static void trimString(std::string & str )
     return;
 }
 
+static std::vector<std::string> split(std::string src, char a = ',')
+{
+    std::vector<std::string> vecDst;
+
+    std::string::size_type pos1, pos2;
+    pos2 = src.find(a);
+    pos1 = 0;
+    while (std::string::npos != pos2) {
+        vecDst.push_back(src.substr(pos1, pos2 - pos1));
+        pos1 = pos2 + 1;
+        pos2 = src.find(a, pos1);
+    }
+    vecDst.push_back(src.substr(pos1));
+    return vecDst;
+}
+
 static void setupDisplayAndScreen (
     const char *display_name,
     xcb_connection_t **dpy, /* MODIFIED */
@@ -112,14 +131,32 @@ static void setupDisplayAndScreen (
         xcb_screen_iterator_t screen_iter = xcb_setup_roots_iterator(setup);
         int screen_count = xcb_setup_roots_length(setup);
         if (screen_count <= screen_number) {
-            //Fatal_Error ("unable to access screen %d, max is %d",
-                 //screen_number, screen_count-1 );
+            fprintf (stderr, "unable to access screen %d, max is %d",
+                 screen_number, screen_count-1 );
         }
 
         for (i = 0; i < screen_number; i++)
             xcb_screen_next(&screen_iter);
         *screen = screen_iter.data;
     }
+}
+
+static bool isWindowViewable(xcb_window_t window)
+{
+    bool ok = false;
+
+    if (!dpy) {
+        return ok;
+    }
+
+    xcb_get_window_attributes_cookie_t cookie = xcb_get_window_attributes_unchecked(dpy, window);
+    xcb_get_window_attributes_reply_t* reply = xcb_get_window_attributes_reply(dpy, cookie, NULL);
+    if (reply) {
+        ok = (reply->_class == InputOutput) && (reply->map_state == IsViewable);
+        free(reply);
+    }
+
+    return ok;
 }
 
 static xcb_atom_t internAtom(const char *name, bool only_if_exists)
@@ -187,7 +224,6 @@ static std::unordered_set<std::string> windowProperty(xcb_window_t WId, xcb_atom
             data.insert(atomValue);
             remaining = reply->bytes_after;
             offset += len;
-
         }
 
         free(reply);
@@ -196,25 +232,21 @@ static std::unordered_set<std::string> windowProperty(xcb_window_t WId, xcb_atom
     return data;
 }
 
-static std::vector<std::string> split(std::string src, char a = ',')
+static bool iswindowHasProperty(xcb_window_t WId, xcb_atom_t propAtom)
 {
-    std::vector<std::string> vecDst;
+    int offset = 0;
+    xcb_get_property_cookie_t cookie = xcb_get_property(dpy, false, WId,
+                                                        propAtom, XCB_ATOM_ANY, offset, 1024);
+    xcb_get_property_reply_t *reply = xcb_get_property_reply(dpy, cookie, NULL);
+    if (reply)
+        free(reply);
 
-    std::string::size_type pos1, pos2;
-    pos2 = src.find(a);
-    pos1 = 0;
-    while (std::string::npos != pos2) {
-        vecDst.push_back(src.substr(pos1, pos2 - pos1));
-        pos1 = pos2 + 1;
-        pos2 = src.find(a, pos1);
-    }
-    vecDst.push_back(src.substr(pos1));
-    return vecDst;
+    return (reply->type != None) ? true : false;
 }
 
 static void readEtcWhiteList()
 {
-    std::ifstream f(etcWhitelistPath);
+    std::ifstream f(etcWhitelistPath.c_str());
     if (!f.is_open()) {
         //fprintf(stderr, "Failed to open etc whitelist configure file\n");
         return;
@@ -293,6 +325,7 @@ static bool isProhibitWindowByConfigure(xcb_window_t window) {
 }
 #endif
 
+inline __attribute__((always_inline))
 static bool isBrowser(xcb_window_t window)
 {
     bool bBrowser = false;
@@ -303,22 +336,35 @@ static bool isBrowser(xcb_window_t window)
         fprintf(stderr, "Failed to xcb_list_properties_reply");
         return bBrowser;
     }
+#if 0
     int atomLength = xcb_list_properties_atoms_length(propertyReply);
     xcb_atom_t* atoms = xcb_list_properties_atoms(propertyReply);
 
     for (int i = 0; i < atomLength; i++) {
         xcb_atom_t atom = atoms[i];
         std::string name = atomName(atom);
-        if (name == std::string("WM_WINDOW_ROLE")) {
+        if (name == browserAtomName) {
             std::unordered_set<std::string> setAtomValues = windowProperty(window, atom, XCB_ATOM_STRING);
             for (std::unordered_set<std::string>::iterator it = setAtomValues.begin(); it != setAtomValues.end(); it++) {
-                if (*it == std::string("browser")) {
+                if (*it == browserAtomValue) {
                     free(propertyReply);
                     return (bBrowser = true);
                 }
             }
         }
     }
+#else
+    xcb_atom_t browserAtom = internAtom(browserAtomName.c_str(), true);
+    if (isWindowViewable(window) && iswindowHasProperty(window, browserAtom)) {
+        std::unordered_set<std::string> setAtomValues = windowProperty(window, browserAtom, XCB_ATOM_STRING);
+        for (std::unordered_set<std::string>::iterator it = setAtomValues.begin(); it != setAtomValues.end(); it++) {
+            if (*it == browserAtomValue) {
+                free(propertyReply);
+                return (bBrowser = true);
+            }
+        }
+    }
+#endif
 
     free(propertyReply);
 
@@ -367,6 +413,7 @@ static bool needProhibitScreenshot(xcb_drawable_t window)
 
     for (std::vector<xcb_window_t>::iterator it = vecBrowserWindow.begin(); it != vecBrowserWindow.end(); it++) {
         xcb_window_t browserWindow = *it;
+#if 0
         xcb_get_window_attributes_cookie_t cookie = xcb_get_window_attributes_unchecked(dpy, browserWindow);
         xcb_get_window_attributes_reply_t* attReply = xcb_get_window_attributes_reply(dpy, cookie, NULL);
         if (!attReply) {
@@ -383,7 +430,16 @@ static bool needProhibitScreenshot(xcb_drawable_t window)
                 }
             }
         }
-        free(attReply);
+#else
+        std::unordered_set<std::string> vecAtomValues = windowProperty(browserWindow, internAtom("WM_STATE", true), 0x14c);
+        for (std::unordered_set<std::string>::iterator it = vecAtomValues.begin(); it != vecAtomValues.end(); it++) {
+            const char* data = (*it).c_str();
+            long value = *(const unsigned short*)data;
+            if (value == NormalState) {
+                return (isProhibitScreenshot = true);
+            }
+        }
+#endif
     }
 
     return isProhibitScreenshot;
