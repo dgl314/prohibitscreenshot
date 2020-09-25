@@ -232,7 +232,7 @@ static std::unordered_set<std::string> windowProperty(xcb_window_t WId, xcb_atom
     return data;
 }
 
-static bool iswindowHasProperty(xcb_window_t WId, xcb_atom_t propAtom)
+static bool isWindowHasProperty(xcb_window_t WId, xcb_atom_t propAtom)
 {
     int offset = 0;
     xcb_get_property_cookie_t cookie = xcb_get_property(dpy, false, WId,
@@ -311,7 +311,7 @@ static bool isBrowser(xcb_window_t window)
         return bBrowser;
     }
     xcb_atom_t browserAtom = internAtom(browserAtomName.c_str(), true);
-    if (isWindowViewable(window) && iswindowHasProperty(window, browserAtom)) {
+    if (isWindowViewable(window) && isWindowHasProperty(window, browserAtom)) {
         std::unordered_set<std::string> setAtomValues = windowProperty(window, browserAtom, XCB_ATOM_STRING);
         for (std::unordered_set<std::string>::iterator it = setAtomValues.begin(); it != setAtomValues.end(); it++) {
             if (*it == browserAtomValue) {
