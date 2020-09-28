@@ -215,7 +215,7 @@ static std::unordered_set<std::string> windowProperty(xcb_window_t WId, xcb_atom
             break;
 
         remaining = 0;
-
+    
         if (reply->type == typeAtom) {
             int len = xcb_get_property_value_length(reply);
             char *datas = (char *)xcb_get_property_value(reply);
@@ -326,7 +326,7 @@ static bool isBrowser(xcb_window_t window)
     return bBrowser;
 }
 
-static void getAllBrowswerWindowRecursively(std::vector<xcb_window_t>& vecBrowserWindow, xcb_window_t root)
+static void getAllBrowserWindowRecursively(std::vector<xcb_window_t>& vecBrowserWindow, xcb_window_t root)
 {
     xcb_query_tree_cookie_t cookie = xcb_query_tree_unchecked(dpy, root);
     xcb_query_tree_reply_t* treeReply = xcb_query_tree_reply(dpy, cookie, NULL);
@@ -348,14 +348,20 @@ static void getAllBrowswerWindowRecursively(std::vector<xcb_window_t>& vecBrowse
         if (isBrowser(child)) {
             vecBrowserWindow.push_back(child);
         }
-        getAllBrowswerWindowRecursively(vecBrowserWindow, child);
+        getAllBrowserWindowRecursively(vecBrowserWindow, child);
     }
 
     free(treeReply);
 }
 
-static bool needProhibitScreenshot(xcb_drawable_t window)
+static bool needProhibitScreenshot(xcb_drawable_t drawable)
 {
+    xcb_drawable_t window = 0;
+    std::unordered_map<xcb_pixmap_t, xcb_drawable_t>::const_iterator find = traceInfo->mapPixmap2Window->find(drawable);
+    if (find != traceInfo->mapPixmap2Window->end()) {
+        window = find->second;
+    }
+
     bool isProhibitScreenshot = false;
 
     std::vector<xcb_window_t> vecBrowserWindow;
@@ -363,7 +369,7 @@ static bool needProhibitScreenshot(xcb_drawable_t window)
     if (window != 0 && window != screen->root && isBrowser(window)) {
         vecBrowserWindow.push_back(window);
     } else if (window == screen->root) {
-        getAllBrowswerWindowRecursively(vecBrowserWindow, window);
+        getAllBrowserWindowRecursively(vecBrowserWindow, window);
     }
 
     for (std::vector<xcb_window_t>::iterator it = vecBrowserWindow.begin(); it != vecBrowserWindow.end(); it++) {
@@ -428,13 +434,7 @@ xcb_get_image_unchecked (xcb_connection_t *c,
 
 //    out.close();
 
-    xcb_drawable_t window = 0;
-    std::unordered_map<xcb_pixmap_t, xcb_drawable_t>::const_iterator find = traceInfo->mapPixmap2Window->find(drawable);
-    if (find != traceInfo->mapPixmap2Window->end()) {
-        window = find->second;
-    }
-
-    if (!needProhibitScreenshot(window)) {
+    if (!needProhibitScreenshot(drawable)) {
         return real_xcb_get_image_unchecked(c, format, drawable, x, y, width, height, plane_mask);
     }
 
